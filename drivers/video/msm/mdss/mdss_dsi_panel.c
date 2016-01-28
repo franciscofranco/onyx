@@ -21,6 +21,7 @@
 #include <linux/leds.h>
 #include <linux/qpnp/pwm.h>
 #include <linux/err.h>
+#include <linux/display_state.h>
 
 #include "mdss_dsi.h"
 #ifdef VENDOR_EDIT
@@ -43,6 +44,13 @@
 /* Mobile Phone Software Dept.Driver, 2014/02/24  Add for ESD test */
 #include <linux/switch.h>
 #endif
+
+bool display_on = true;
+
+bool is_display_on()
+{
+	return display_on;
+}
 
 #ifdef VENDOR_EDIT
 extern  int lm3630_bank_a_update_status(u32 bl_level);
@@ -991,6 +999,8 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 		return -EINVAL;
 	}
 
+	display_on = true;
+
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 	mipi  = &pdata->panel_info.mipi;
@@ -1101,6 +1111,9 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
         mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds);
 #endif
 	pr_debug("%s:-\n", __func__);
+
+	display_on = false;
+
 	return 0;
 }
 
