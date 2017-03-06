@@ -1115,6 +1115,9 @@ static int check_version(Elf_Shdr *sechdrs,
 	if (!crc)
 		return 1;
 
+	if (!strncmp("wlan", mod->name, 4))
+		return 1;
+
 	/* No versions at all?  modprobe --force does this. */
 	if (versindex == 0)
 		return try_to_force_load(mod, symname) == 0;
