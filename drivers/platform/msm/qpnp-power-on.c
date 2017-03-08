@@ -439,8 +439,8 @@ qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 	input_sync(pon->pon_input);
 
 #ifdef VENDOR_EDIT
-//hefaxi@filesystems, 2015/07/03, add for force dump function
-    oem_check_force_dump_key(cfg->key_code,(pon_rt_sts & pon_rt_bit));
+	//hefaxi@filesystems, 2015/07/03, add for force dump function
+	oem_check_force_dump_key(cfg->key_code,(pon_rt_sts & pon_rt_bit));
 #endif
 	return 0;
 }
