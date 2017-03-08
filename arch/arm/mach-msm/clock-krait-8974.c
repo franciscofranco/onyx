@@ -564,29 +564,17 @@ static int hfpll_base_init(struct platform_device *pdev, struct hfpll_clk *h)
 	return 0;
 }
 
-static bool enable_boost;
-module_param_named(boost, enable_boost, bool, S_IRUGO | S_IWUSR);
-
-static void krait_update_uv(int *uv, int num, int boost_uv)
+static void krait_update_uv(int *uv, int num)
 {
 	int i;
 
 	switch (read_cpuid_id()) {
-	case 0x511F04D0: /* KR28M2A20 */
-	case 0x511F04D1: /* KR28M2A21 */
-	case 0x510F06F0: /* KR28M4A10 */
-		for (i = 0; i < num; i++)
-			uv[i] = max(1150000, uv[i]);
+		case 0x511F04D0: /* KR28M2A20 */
+		case 0x511F04D1: /* KR28M2A21 */
+		case 0x510F06F0: /* KR28M4A10 */
+			for (i = 0; i < num; i++)
+				uv[i] = max(1150000, uv[i]);
 	};
-	#ifdef CONFIG_VENDOR_EDIT
-	//boost krait voltage by 50 mV 
-	enable_boost = 1; //CASE ID: 01694672
-	#endif
-
-	if (enable_boost) {
-		for (i = 0; i < num; i++)
-			uv[i] += boost_uv;
-	}
 }
 
 static char table_name[] = "qcom,speedXX-pvsXX-bin-vXX";
@@ -708,12 +696,8 @@ static int clock_krait_8974_driver_probe(struct platform_device *pdev)
 			rows = ret;
 		}
 	}
-#ifdef CONFIG_VENDOR_EDIT//CASE ID: 01694672, solve the problem of Kernel NULL pointer
-    krait_update_uv(uv, rows, pvs ? 50000 : 0);
-#else
-    krait_update_uv(uv, rows, pvs ? 25000 : 0);
-#endif
 
+	krait_update_uv(uv, rows);
 
 	if (clk_init_vdd_class(dev, &krait0_clk.c, rows, freq, uv, ua))
 		return -ENOMEM;
