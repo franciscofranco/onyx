@@ -2736,7 +2736,7 @@ EXPORT_SYMBOL(wcnss_flush_work);
  */
 void wcnss_dump_stack(struct task_struct *task)
 {
-	show_stack(task, NULL);
+	//show_stack(task, NULL);
 }
 EXPORT_SYMBOL(wcnss_dump_stack);
 
