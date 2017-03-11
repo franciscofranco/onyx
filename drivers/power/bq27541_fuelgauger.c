@@ -912,7 +912,8 @@ static void bq27541_hw_config(struct work_struct *work)
 /* jingchun.wang@Onlinerd.Driver, 2014/02/12  Add for retry when config fail */
 		di->retry_count--;
 		if(di->retry_count > 0) {
-			schedule_delayed_work(&di->hw_config, HZ);
+			queue_delayed_work(system_power_efficient_wq,
+				&di->hw_config, HZ);
 		}
 #endif /*CONFIG_VENDOR_EDIT*/
 		return;
@@ -1708,9 +1709,11 @@ static int bq27541_battery_probe(struct i2c_client *client,
 	INIT_WORK(&di->counter, bq27541_coulomb_counter_work);
 	INIT_DELAYED_WORK(&di->hw_config, bq27541_hw_config);
 #ifdef CONFIG_VENDOR_EDIT
-	schedule_delayed_work(&di->hw_config, 0);
+	queue_delayed_work(system_power_efficient_wq,
+		&di->hw_config, 0);
 #else
-	schedule_delayed_work(&di->hw_config, BQ27541_INIT_DELAY);
+	queue_delayed_work(system_power_efficient_wq,
+		&di->hw_config, BQ27541_INIT_DELAY);
 #endif
 	/* OPPO 2013-12-22 wangjc add for fastchg*/
 	#ifdef CONFIG_PIC1503_FASTCG
