@@ -4035,7 +4035,7 @@ static const struct file_operations sleep_mode_enable_proc_fops = {
 
 static const struct file_operations tp_reset_proc_fops = {
 	.write = tp_write_func,
-	//.read =  tp_sleep_read_func,
+	.read =  tp_sleep_read_func,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 };
