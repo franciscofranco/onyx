@@ -4035,7 +4035,7 @@ static const struct file_operations sleep_mode_enable_proc_fops = {
 
 static const struct file_operations tp_reset_proc_fops = {
 	.write = tp_write_func,
-	//.read =  tp_sleep_read_func,
+	.read =  tp_sleep_read_func,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 };
@@ -4686,12 +4686,12 @@ static int synaptics_ts_probe(
 	/***power_init*****/
 
 	mutex_init(&ts->mutex);
-	synaptics_wq = create_singlethread_workqueue("synaptics_wq");
+	synaptics_wq = alloc_ordered_workqueue("synaptics_wq", WQ_HIGHPRI);
     if( !synaptics_wq ){
         ret = -ENOMEM;
 		goto err_alloc_data_failed;
     }
-	speedup_resume_wq = create_singlethread_workqueue("speedup_resume_wq");
+	speedup_resume_wq = alloc_ordered_workqueue("speedup_resume_wq", WQ_HIGHPRI);
 	if( !speedup_resume_wq ){
          ret = -ENOMEM;
 		goto err_alloc_data_failed;
