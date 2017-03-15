@@ -430,6 +430,28 @@ static void __init msm8974_early_memory(void)
 	of_scan_flat_dt(dt_scan_for_memory_hole, msm8974_reserve_table);
 }
 
+#ifdef VENDOR_EDIT
+// Add for ram_console device
+static struct persistent_ram_descriptor msm_prd[] __initdata = {
+        {
+                .name = "ram_console",
+                .size = SZ_1M,
+        },
+};
+
+static struct persistent_ram msm_pr __initdata = {
+        .descs = msm_prd,
+        .num_descs = ARRAY_SIZE(msm_prd),
+        .start = PLAT_PHYS_OFFSET + SZ_1G + SZ_256M,
+        .size = SZ_1M,
+};
+
+static struct platform_device ram_console_device = {
+        .name = "ram_console",
+        .id = -1,
+};
+#endif  /* VENDOR_EDIT */
+
 /*
  * Used to satisfy dependencies for devices that need to be
  * run early or in a particular order. Most likely your device doesn't fall
@@ -452,6 +474,7 @@ void __init msm8974_add_drivers(void)
 		msm_clock_init(&msm8974_clock_init_data);
 	tsens_tm_init_driver();
 	msm_thermal_device_init();
+	platform_device_register(&ram_console_device);
 }
 
 static struct of_dev_auxdata msm_hsic_host_adata[] = {
@@ -549,24 +572,6 @@ void __init msm8974_init(void)
 		rc = sysfs_create_group(systeminfo_kobj, &attr_group);
 #endif //CONFIG_VENDOR_EDIT
 }
-
-#ifdef VENDOR_EDIT
-// Add for ram_console device
-static struct persistent_ram_descriptor msm_prd[] __initdata = {
-	{
-		.name = "ram_console",
-		.size = SZ_1M,
-	},
-};
-
-static struct persistent_ram msm_pr __initdata = {
-	.descs = msm_prd,
-	.num_descs = ARRAY_SIZE(msm_prd),
-	//solve the problem samsung 6GB dai DDR can't boot up
-	.start = /*0xE0200000,//*/PLAT_PHYS_OFFSET + SZ_1G + SZ_256M,
-	.size = SZ_1M,
-};
-#endif  /* VENDOR_EDIT */
 
 void __init msm8974_init_very_early(void)
 {

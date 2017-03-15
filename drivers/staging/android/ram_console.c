@@ -74,21 +74,9 @@ static int __devinit ram_console_probe(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_VENDOR_EDIT_OP_LASTKMSG
-/* add by yangrujin@bsp 2015/9/2, support last_kmsg feature */
-static const struct of_device_id msm_ram_console_match[] = {
-	{.compatible = "ram-console"},
-	{}
-};
-#endif
 static struct platform_driver ram_console_driver = {
 	.driver		= {
 		.name	= "ram_console",
-#ifdef CONFIG_VENDOR_EDIT_OP_LASTKMSG
-/* add by yangrujin@bsp 2015/9/2, support last_kmsg feature */
-		.owner = THIS_MODULE,
-		.of_match_table = msm_ram_console_match,
-#endif
 	},
 	.probe = ram_console_probe,
 };
@@ -98,7 +86,7 @@ static int __init ram_console_module_init(void)
 	return platform_driver_register(&ram_console_driver);
 }
 
-#ifndef CONFIG_PRINTK
+#if !defined(CONFIG_PRINTK) || defined(VENDOR_EDIT)
 #define dmesg_restrict	0
 #endif
 
