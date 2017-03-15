@@ -74,15 +74,10 @@ static void *emergency_dload_mode_addr;
 
 /* Download mode master kill-switch */
 static int dload_set(const char *val, struct kernel_param *kp);
-#ifndef CONFIG_VENDOR_EDIT  
-//modify for reboot after crash
-static int download_mode = 1;
+#ifdef CONFIG_VENDOR_EDIT
+static int download_mode;
 #else
-#ifndef RELEASE_DOWNLOAD_MODE_SET
 static int download_mode = 1;
-#else
-static int download_mode = 0;
-#endif 
 #endif  /*CONFIG_VENDOR_EDIT*/
 module_param_call(download_mode, dload_set, param_get_int,
 			&download_mode, 0644);
