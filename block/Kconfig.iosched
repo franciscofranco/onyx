@@ -130,11 +130,7 @@ config DEFAULT_IOSCHED
 	default "deadline" if DEFAULT_DEADLINE
 	default "row" if DEFAULT_ROW
 	default "cfq" if DEFAULT_CFQ
-<<<<<<< HEAD
-=======
-	default "zen" if DEFAULT_ZEN
 	default "bfq" if DEFAULT_BFQ
->>>>>>> f1474829a621... block: cgroups, kconfig, build bits for BFQ-v7r8-3.4
 	default "noop" if DEFAULT_NOOP
 
 endmenu
