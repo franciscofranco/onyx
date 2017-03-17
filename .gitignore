@@ -99,3 +99,4 @@ x509.genkey
 
 # Kconfig presets
 all.config
+arch/arm/mach-msm/smd_rpc_sym.c
