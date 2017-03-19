@@ -393,4 +393,4 @@ static int __init clock_a7_init(void)
 {
 	return platform_driver_register(&clock_a7_driver);
 }
-arch_initcall(clock_a7_init);
+device_initcall(clock_a7_init);
