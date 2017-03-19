@@ -169,6 +169,7 @@ int Mgesture_gesture =0;//"(M)"
 #endif
 
 /*********************for Debug LOG switch*******************/
+#ifdef CONFIG_DEBUG_INFO
 #define TPD_ERR(a, arg...)  pr_err(TPD_DEVICE ": " a, ##arg)
 #define TPDTM_DMESG(a, arg...)  printk(TPD_DEVICE ": " a, ##arg)
 
@@ -177,6 +178,11 @@ int Mgesture_gesture =0;//"(M)"
 		if(tp_debug)\
 			pr_err(TPD_DEVICE ": " a,##arg);\
 	}while(0)
+#else
+#define TPD_ERR(a, arg...)
+#define TPDTM_DMESG(a, arg...)
+#define TPD_DEBUG(a,arg...)
+#endif
 
 /*---------------------------------------------Global Variable----------------------------------------------*/
 static int baseline_ret = 0;
