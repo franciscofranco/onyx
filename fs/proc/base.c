@@ -3034,15 +3034,6 @@ static int proc_pid_personality(struct seq_file *m, struct pid_namespace *ns,
 	return err;
 }
 
-#ifdef VENDOR_EDIT
-//huruihuan add for regnoize game apps
-static int proc_pid_gameflag(struct seq_file *m, struct pid_namespace *ns,
-				struct pid *pid, struct task_struct *task)
-{
-    seq_printf(m, "%d\n", task->game_flag);
-    return 0;
-}
-#endif
 /*
  * Thread groups
  */
@@ -3064,10 +3055,6 @@ static const struct pid_entry tgid_base_stuff[] = {
 	INF("auxv",       S_IRUSR, proc_pid_auxv),
 	ONE("status",     S_IRUGO, proc_pid_status),
 	ONE("personality", S_IRUGO, proc_pid_personality),
-#ifdef VENDOR_EDIT
-//huruihuan add for regnoize game apps
-    ONE("gameflag", S_IRUGO, proc_pid_gameflag),
-#endif
 	INF("limits",	  S_IRUGO, proc_pid_limits),
 #ifdef CONFIG_SCHED_DEBUG
 	REG("sched",      S_IRUGO|S_IWUSR, proc_pid_sched_operations),
@@ -3434,10 +3421,6 @@ static const struct pid_entry tid_base_stuff[] = {
 	INF("auxv",      S_IRUSR, proc_pid_auxv),
 	ONE("status",    S_IRUGO, proc_pid_status),
 	ONE("personality", S_IRUGO, proc_pid_personality),
-#ifdef VENDOR_EDIT
-//huruihuan add for regnoize game apps
-    ONE("gameflag", S_IRUGO, proc_pid_gameflag),
-#endif
 	INF("limits",	 S_IRUGO, proc_pid_limits),
 #ifdef CONFIG_SCHED_DEBUG
 	REG("sched",     S_IRUGO|S_IWUSR, proc_pid_sched_operations),
