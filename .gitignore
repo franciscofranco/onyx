@@ -101,3 +101,4 @@ x509.genkey
 all.config
 arch/arm/mach-msm/smd_rpc_sym.c
 build.sh
+upload.sh
