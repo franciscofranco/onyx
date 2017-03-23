@@ -447,6 +447,26 @@ static void wakeup_source_deactivate(struct wakeup_source *ws)
                 wake_up(&wakeup_count_wait_queue);
 }
 
+static bool wakeup_source_blocker(struct wakeup_source *ws)
+{
+	unsigned int wslen = 0;
+
+	if (ws && ws->active) {
+		wslen = strlen(ws->name);
+
+		if ((!enable_qcom_rx_wakelock_ws &&
+			!strncmp(ws->name, "qcom_rx_wakelock", wslen)) ||
+				(!enable_wlan_ws &&
+					!strncmp(ws->name, "wlan", wslen))) {
+			wakeup_source_deactivate(ws);
+			pr_info("forcefully deactivate wakeup source: %s\n", ws->name);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /*
  * The functions below use the observation that each wakeup event starts a
  * period in which the system should not be suspended.  The moment this period
@@ -483,25 +503,13 @@ static void wakeup_source_deactivate(struct wakeup_source *ws)
  * core of the event by incrementing the counter of of wakeup events being
  * processed.
  */
-static const char *qcom_rx_wakelock = "qcom_rx_wakelock";
-static const char *wlan = "wlan";
-
-#define qcom_rx_wakelock_len strlen(qcom_rx_wakelock)
-#define wlan_len strlen(wlan)
 
 static void wakeup_source_activate(struct wakeup_source *ws)
 {
 	unsigned int cec;
 
-	if ((!enable_qcom_rx_wakelock_ws &&
-			!strncmp(ws->name, qcom_rx_wakelock, qcom_rx_wakelock_len)) ||
-		(!enable_wlan_ws &&
-                        !strncmp(ws->name, wlan, wlan_len))) {
-		if (ws->active)
-			wakeup_source_deactivate(ws);
-
+	if (wakeup_source_blocker(ws))
 		return;
-	}
 
 	ws->active = true;
 	ws->active_count++;
@@ -719,18 +727,13 @@ void print_active_wakeup_sources(void)
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
 		if (ws->active) {
 			pr_info("active wakeup source: %s\n", ws->name);
-			active = 1;
 
-			//Can we do a break here? Or do we want to get all of them?
-
+			if (!wakeup_source_blocker(ws))
+				active = 1;
 		} else if (!active &&
-		(!last_activity_ws ||
-		ws->last_time.tv64 >
-		last_activity_ws->last_time.tv64)) {
-
-			//ktime_to_ns() anyone?
-
-			last_activity_ws = ws;
+			(!last_activity_ws || ws->last_time.tv64 >
+			last_activity_ws->last_time.tv64)) {
+				last_activity_ws = ws;
 		}
 	}
 
