@@ -28,13 +28,11 @@
 #include <linux/qpnp/power-on.h>
 #include <linux/of_batterydata.h>
 
-
 #ifdef CONFIG_VENDOR_EDIT
 #include <linux/reboot.h>
 
 #include <linux/boot_mode.h>
 #endif
-
 
 /* BMS Register Offsets */
 #define REVISION1			0x0
@@ -192,10 +190,8 @@ struct qpnp_bms_chip {
 	int				rbatt_mohm;
 #ifdef CONFIG_VENDOR_EDIT
 	const char		*battery_type; // add by xcb
-	int	chg_done;
+	bool			resume_from_sleep;
 #endif /*CONFIG_VENDOR_EDIT*/
-
-
 
 	struct delayed_work		calculate_soc_delayed_work;
 	struct work_struct		recalc_work;
@@ -236,7 +232,6 @@ struct qpnp_bms_chip {
 #ifdef CONFIG_VENDOR_EDIT
 	unsigned long			last_battery_absent_sec;
 #endif
-
 	unsigned long			tm_sec;
 	unsigned long			report_tm_sec;
 	bool				first_time_calc_soc;
@@ -332,7 +327,6 @@ static enum power_supply_property msm_bms_power_props[] = {
 	POWER_SUPPLY_PROP_BATTERY_TYPE, // add by xcb
 	POWER_SUPPLY_PROP_BATTERY_CALCULATED_SOC,
 #endif /*CONFIG_VENDOR_EDIT*/
-
 };
 
 static int discard_backup_fcc_data(struct qpnp_bms_chip *chip);
@@ -789,6 +783,7 @@ static void reset_cc(struct qpnp_bms_chip *chip, u8 flags)
 	mutex_unlock(&chip->bms_output_lock);
 }
 
+#ifndef CONFIG_VENDOR_EDIT
 static int get_battery_status(struct qpnp_bms_chip *chip)
 {
 	union power_supply_propval ret = {0,};
@@ -811,10 +806,12 @@ static int get_battery_status(struct qpnp_bms_chip *chip)
 	pr_debug("battery power supply is not registered\n");
 	return POWER_SUPPLY_STATUS_UNKNOWN;
 }
+#endif
 
 #ifdef CONFIG_VENDOR_EDIT
-static int get_battery_charge_done(struct qpnp_bms_chip *chip)
+static int get_battery_status_for_bms(struct qpnp_bms_chip *chip)
 {
+
 	union power_supply_propval ret = {0,};
 	int rc;
 
@@ -823,13 +820,18 @@ static int get_battery_charge_done(struct qpnp_bms_chip *chip)
 	if (chip->batt_psy) {
 		/* if battery has been registered, use the status property */
 		rc = chip->batt_psy->get_property(chip->batt_psy,
-					POWER_SUPPLY_PROP_CHARGE_DONE, &ret);
+					POWER_SUPPLY_PROP_STATUS_FOR_BMS, &ret);
 		if (rc) {
-			return 0;
+			pr_debug("Battery does not export status: %d\n", rc);
+			return POWER_SUPPLY_STATUS_UNKNOWN;
 		}
 		return ret.intval;
 	}
-	return 0;
+
+	/* Default to false if the battery power supply is not registered. */
+	pr_debug("battery power supply is not registered\n");
+	return POWER_SUPPLY_STATUS_UNKNOWN;
+
 }
 #endif
 
@@ -859,12 +861,20 @@ static int get_battery_charge_type(struct qpnp_bms_chip *chip)
 
 static bool is_battery_charging(struct qpnp_bms_chip *chip)
 {
+#ifdef CONFIG_VENDOR_EDIT
+	return get_battery_status_for_bms(chip) == POWER_SUPPLY_STATUS_CHARGING;
+#else
 	return get_battery_status(chip) == POWER_SUPPLY_STATUS_CHARGING;
+#endif
 }
 
 static bool is_battery_full(struct qpnp_bms_chip *chip)
 {
+#ifdef CONFIG_VENDOR_EDIT
+	return get_battery_status_for_bms(chip) == POWER_SUPPLY_STATUS_FULL;
+#else
 	return get_battery_status(chip) == POWER_SUPPLY_STATUS_FULL;
+#endif
 }
 
 #define BAT_PRES_BIT		BIT(7)
@@ -1914,7 +1924,6 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 	pr_debug("batt_temp phy = %lld meas = 0x%llx\n", result.physical,
 						result.measurement);
 	batt_temp = (int)result.physical;
-	
 
 	rc = get_battery_voltage(chip, &vbat_uv);
 	if (rc < 0) {
@@ -1975,6 +1984,8 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 			soc = scale_soc_while_chg(chip, charge_time_sec,
 					chip->catch_up_time_sec,
 					soc, chip->last_soc);
+
+
 		/* if the battery is close to cutoff allow more change */
 		/*if (wake_lock_active(&chip->low_voltage_wake_lock)) {
 			soc_change = min((int)abs(chip->last_soc - soc),
@@ -1987,7 +1998,13 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 //
 		}
 		else */
-		if (!charging) {
+		if ((chip->battery_status == POWER_SUPPLY_STATUS_FULL) && chip->last_soc != 100) {
+			soc = 100;
+			soc_change = min((int)abs(chip->last_soc - soc),
+				time_since_last_change_sec
+					/ SOC_CHANGE_CHARGE_DONE);
+			//pr_info("POWER_SUPPLY_STATUS_FULL, soc != 100\n");
+		} else if (!charging) {
 			int soc_change_per_sec;
 
 			if (chip->last_soc == 100)
@@ -2003,7 +2020,7 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 
 			/*if (batt_temp < 0)
 				soc_change_per_sec /= 2;*/
-				
+
 			soc_change = min((int)abs(chip->last_soc - soc),
 					time_since_last_change_sec / soc_change_per_sec);
 
@@ -2015,13 +2032,7 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 						/ SOC_CHANGE_PER_SEC);
 		}
 
-		if (charging && chip->chg_done && chip->last_soc != 100) {
-			soc = 100;
-			soc_change = min((int)abs(chip->last_soc - soc),
-				time_since_last_change_sec
-					/ SOC_CHANGE_CHARGE_DONE);
-			//pr_info("chip->chg_done == true, soc != 100\n");
-		}
+
 
 		if (chip->last_soc_unbound) {
 			chip->last_soc_unbound = false;
@@ -2040,10 +2051,9 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 
 	}
 
-	if (chip->battery_status == POWER_SUPPLY_STATUS_FULL && chip->last_soc == 100) {
+	if ((chip->battery_status == POWER_SUPPLY_STATUS_FULL) && chip->last_soc == 100) {
 		soc = 100;
 		soc_change = 0;
-		chip->last_soc_change_sec = last_change_sec;
 		//pr_debug("chip->battery_status == POWER_SUPPLY_STATUS_FULL Reported SOC = 100\n");
 	}
 
@@ -2057,6 +2067,12 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 
 	soc = bound_soc(soc);
 	chip->last_soc = soc;
+
+	if ((chip->battery_status == POWER_SUPPLY_STATUS_FULL) && chip->last_soc == 100) {
+		get_current_time(&last_change_sec);
+		chip->last_soc_change_sec = last_change_sec;
+	}
+	chip->resume_from_sleep = false;
 
 	backup_soc_and_iavg(chip, batt_temp, chip->last_soc);
 	pr_debug("Reported SOC = %d\n", chip->last_soc);
@@ -2074,13 +2090,10 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 		pr_debug("power supply changed\n");
 	}
 
-
 	return soc;
 }
-
 #else
 #define SOC_CHANGE_PER_SEC		5
-
 #define REPORT_SOC_WAIT_MS		10000
 static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 {
@@ -2177,7 +2190,6 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 				time_since_last_change_sec
 					/ SOC_CHANGE_PER_SEC);
 
-
 		if (chip->last_soc_unbound) {
 			chip->last_soc_unbound = false;
 		} else {
@@ -2188,14 +2200,11 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 			soc_change = min(1, soc_change);
 		}
 
-
 		if (soc < chip->last_soc && soc != 0)
 			soc = chip->last_soc - soc_change;
 		if (soc > chip->last_soc && soc != 100)
 			soc = chip->last_soc + soc_change;
-
 	}
-
 
 	if (chip->last_soc != soc && !chip->last_soc_unbound)
 		chip->last_soc_change_sec = last_change_sec;
@@ -2203,9 +2212,7 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 	pr_debug("last_soc = %d, calculated_soc = %d, soc = %d, time since last change = %d\n",
 			chip->last_soc, chip->calculated_soc,
 			soc, time_since_last_change_sec);
-
 	chip->last_soc = bound_soc(soc);
-
 	backup_soc_and_iavg(chip, batt_temp, chip->last_soc);
 	pr_debug("Reported SOC = %d\n", chip->last_soc);
 	chip->t_soc_queried = now;
@@ -2213,7 +2220,6 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 
 	return soc;
 }
-
 #endif
 
 static int report_state_of_charge(struct qpnp_bms_chip *chip)
@@ -2538,7 +2544,11 @@ static int clamp_soc_based_on_voltage(struct qpnp_bms_chip *chip, int soc)
 	if (soc <= 0 && vbat_uv > chip->v_cutoff_uv) {
 		pr_debug("clamping soc to 1, vbat (%d) > cutoff (%d)\n",
 						vbat_uv, chip->v_cutoff_uv);
+#ifdef CONFIG_VENDOR_EDIT
+		return 0;
+#else
 		return 1;
+#endif
 	} else {
 		pr_debug("not clamping, using soc = %d, vbat = %d and cutoff = %d\n",
 				soc, vbat_uv, chip->v_cutoff_uv);
@@ -2812,16 +2822,17 @@ done_calculating:
 	if (new_calculated_soc != previous_soc && chip->bms_psy_registered) {
 		power_supply_changed(&chip->bms_psy);
 		pr_debug("power supply changed\n");
-	} else
+	} else {
 #endif
-	{
 		/*
 		 * Call report state of charge anyways to periodically update
 		 * reported SoC. This prevents reported SoC from being stuck
 		 * when calculated soc doesn't change.
 		 */
 		report_state_of_charge(chip);
+#ifndef CONFIG_VENDOR_EDIT
 	}
+#endif
 
 	get_current_time(&chip->last_recalc_time);
 	chip->first_time_calc_soc = 0;
@@ -3603,13 +3614,19 @@ static void charging_ended(struct qpnp_bms_chip *chip)
 			backup_charge_cycle(chip);
 	}
 
+#ifdef CONFIG_VENDOR_EDIT
+	if (get_battery_status_for_bms(chip) == POWER_SUPPLY_STATUS_FULL) {
+#else
 	if (get_battery_status(chip) == POWER_SUPPLY_STATUS_FULL) {
+#endif
 		if (chip->enable_fcc_learning &&
 			(chip->start_soc <= chip->min_fcc_learning_soc) &&
 			(chip->start_pc <= chip->min_fcc_ocv_pc))
 			fcc_learning_config(chip, false);
 		chip->done_charging = true;
+#ifndef CONFIG_VENDOR_EDIT
 		chip->last_soc_invalid = true;
+#endif
 	} else if (chip->charging_adjusted_ocv > 0) {
 		pr_debug("Charging stopped before full, adjusted OCV = %d\n",
 				chip->charging_adjusted_ocv);
@@ -3623,10 +3640,12 @@ static void charging_ended(struct qpnp_bms_chip *chip)
 
 static void battery_status_check(struct qpnp_bms_chip *chip)
 {
-	int status = get_battery_status(chip);
 #ifdef CONFIG_VENDOR_EDIT
-	chip->chg_done = get_battery_charge_done(chip);
+	int status = get_battery_status_for_bms(chip);
+#else
+	int status = get_battery_status(chip);
 #endif
+
 	mutex_lock(&chip->status_lock);
 	if (chip->battery_status != status) {
 		pr_info("status = %d, shadow status = %d\n",
@@ -3708,10 +3727,12 @@ static void battery_insertion_check(struct qpnp_bms_chip *chip)
 				calculate_delta_time(&(chip->last_battery_absent_sec), &(time_since_battery_absent_sec));
 				if (time_since_battery_absent_sec > 3)
 #endif
-					chip->new_battery = true;
+				chip->new_battery = true;
 			} else {
 				reset_vbat_monitoring(chip);
+#ifdef CONFIG_VENDOR_EDIT
 				get_current_time(&(chip->last_battery_absent_sec));
+#endif
 			}
 		}
 		chip->battery_present = present;
@@ -3725,9 +3746,17 @@ static void battery_insertion_check(struct qpnp_bms_chip *chip)
 /* Returns capacity as a SoC percentage between 0 and 100 */
 static int get_prop_bms_capacity(struct qpnp_bms_chip *chip)
 {
-
+#ifdef CONFIG_VENDOR_EDIT
+	if (chip->resume_from_sleep) {
+		return report_state_of_charge(chip);
+	} else if (chip->last_soc == chip->calculated_soc) {
+		return chip->last_soc;
+	} else {
+		return report_state_of_charge(chip);
+	}
+#else
 	return report_state_of_charge(chip);
-
+#endif
 }
 
 static void qpnp_bms_external_power_changed(struct power_supply *psy)
@@ -3780,17 +3809,14 @@ static int qpnp_bms_power_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CYCLE_COUNT:
 		val->intval = chip->charge_cycles;
 		break;
-#ifdef CONFIG_VENDOR_EDIT				
+#ifdef CONFIG_VENDOR_EDIT
 	case POWER_SUPPLY_PROP_BATTERY_TYPE:
 		val->strval = chip->battery_type;
 		break;
-		
 	case POWER_SUPPLY_PROP_BATTERY_CALCULATED_SOC:
 		val->intval = chip->calculated_soc;
 		break;
 #endif /*CONFIG_VENDOR_EDIT*/
-
-		
 	default:
 		return -EINVAL;
 	}
@@ -3920,8 +3946,13 @@ static void load_shutdown_data(struct qpnp_bms_chip *chip)
 	 */
 	chip->shutdown_iavg_ma = MIN_IAVG_MA;
 	calculated_soc = recalculate_raw_soc(chip);
+#ifdef CONFIG_VENDOR_EDIT
+	shutdown_soc_out_of_limit = ((shutdown_soc - calculated_soc)
+			> chip->shutdown_soc_valid_limit);
+#else
 	shutdown_soc_out_of_limit = (abs(shutdown_soc - calculated_soc)
 			> chip->shutdown_soc_valid_limit);
+#endif
 	pr_info("calculated_soc = %d, valid_limit = %d\n",
 			calculated_soc, chip->shutdown_soc_valid_limit);
 
@@ -4079,7 +4110,6 @@ static int set_battery_data(struct qpnp_bms_chip *chip)
 	}
 #endif
 
-
 assign_data:
 	chip->fcc_mah = batt_data->fcc;
 	chip->fcc_temp_lut = batt_data->fcc_temp_lut;
@@ -4093,8 +4123,6 @@ assign_data:
 #ifdef CONFIG_VENDOR_EDIT
 	chip->battery_type = batt_data->battery_type;
 #endif /*CONFIG_VENDOR_EDIT*/
-
-
 
 	/* Override battery properties if specified in the battery profile */
 	if (batt_data->max_voltage_uv >= 0 && dt_data)
@@ -4799,6 +4827,9 @@ static int bms_resume(struct device *dev)
 	unsigned long tm_now_sec;
 	struct qpnp_bms_chip *chip = dev_get_drvdata(dev);
 
+#ifdef CONFIG_VENDOR_EDIT
+	chip->resume_from_sleep = true;
+#endif
 	rc = get_current_time(&tm_now_sec);
 	if (rc) {
 		pr_err("Could not read current time: %d\n", rc);
