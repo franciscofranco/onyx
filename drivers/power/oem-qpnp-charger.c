@@ -469,7 +469,6 @@ struct qpnp_chg_chip {
 	unsigned int			warm_bat_mv;
 	unsigned int			cool_bat_mv;
 	unsigned int 			little_cool_bat_mv;/* yangfangbiao@oneplus.cn, 2015/01/06  Add for  sync with KK charge standard  */
-	unsigned int 			default_charge_full_mah;/*CONFIG_VENDOR_EDIT yangfangbiao@oneplus.cn add 20160801*/
 	unsigned int			resume_delta_mv;
 	int				insertion_ocv_uv;
 	int				term_current;
@@ -565,11 +564,6 @@ struct qpnp_chg_chip {
 #endif
 };
 
-/* david.liu@bsp, 2016/06/17  Add battery type */
-#ifdef CONFIG_VENDOR_EDIT
-static const char *default_batt_type	= "ATL";
-static const char *missing_batt_type	= "Disconnected Battery";
-#endif
 extern void mcu_en_gpio_set(int value);//sjc0623 add
 
 static void
@@ -1749,8 +1743,7 @@ qpnp_chg_vbatdet_lo_irq_handler(int irq, void *_chip)
 
 	pr_debug("chg_done chg_sts: 0x%x triggered\n", chg_sts);
 	if (!chip->charging_disabled && (chg_sts & FAST_CHG_ON_IRQ)) {
-		queue_delayed_work(system_power_efficient_wq,
-			&chip->eoc_work,
+		schedule_delayed_work(&chip->eoc_work,
 			msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
 		pm_stay_awake(chip->dev);
 	}
@@ -1802,8 +1795,7 @@ qpnp_chg_usb_chg_gone_irq_handler(int irq, void *_chip)
 /* OPPO 2013-10-17 wangjc Delete begin for use bq charger */
 #ifndef CONFIG_BQ24196_CHARGER
 		qpnp_chg_force_run_on_batt(chip, 1);
-		queue_delayed_work(system_power_efficient_wq,
-			&chip->arb_stop_work,
+		schedule_delayed_work(&chip->arb_stop_work,
 			msecs_to_jiffies(ARB_STOP_WORK_MS));
 #endif
 /* OPPO 2013-10-17 wangjc Delete end */
@@ -2261,8 +2253,7 @@ qpnp_chg_coarse_det_usb_irq_handler(int irq, void *_chip)
 				return rc;
 			}
 			ovp_ctl = ovp_ctl & USB_VALID_DEBOUNCE_TIME_MASK;
-			queue_delayed_work(system_power_efficient_wq,
-				&chip->usbin_health_check,
+			schedule_delayed_work(&chip->usbin_health_check,
 					msecs_to_jiffies(debounce[ovp_ctl]));
 		} else {
 			/* usb coarse-det rising edge, set the usb psy health
@@ -2433,8 +2424,7 @@ qpnp_chg_usb_usbin_valid_irq_handler(int irq, void *_chip)
 				qpnp_chg_set_appropriate_vddmax(chip);
 			}
 #endif
-			queue_delayed_work(system_power_efficient_wq,
-				&chip->eoc_work,
+			schedule_delayed_work(&chip->eoc_work,
 				msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
 #ifdef CONFIG_VENDOR_EDIT
 /* jingchun.wang@Onlinerd.Driver, 2013/12/31  Add for hold wake_lock as soon as possible */
@@ -2645,8 +2635,7 @@ qpnp_chg_dc_dcin_valid_irq_handler(int irq, void *_chip)
 				chip->delta_vddmax_mv = 0;
 				qpnp_chg_set_appropriate_vddmax(chip);
 			}
-			queue_delayed_work(system_power_efficient_wq,
-				&chip->eoc_work,
+			schedule_delayed_work(&chip->eoc_work,
 				msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
 			schedule_work(&chip->soc_check_work);
 		}
@@ -2800,8 +2789,7 @@ qpnp_chg_chgr_chg_fastchg_irq_handler(int irq, void *_chip)
 			}
 
 			if (!chip->charging_disabled) {
-				queue_delayed_work(system_power_efficient_wq,
-					&chip->eoc_work,
+				schedule_delayed_work(&chip->eoc_work,
 					msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
 				pm_stay_awake(chip->dev);
 			}
@@ -3078,8 +3066,6 @@ static enum power_supply_property msm_batt_power_props[] = {
 
 	/* jingchun.wang@Onlinerd.Driver, 2013/12/16  Add for charge timeout */
 	POWER_SUPPLY_PROP_CHARGE_TIMEOUT,
-	/* david.liu@bsp, 2016/06/17  Add battery type */
-	POWER_SUPPLY_PROP_BATTERY_TYPE,
 #endif
 #ifdef CONFIG_BATTERY_BQ27541
 	POWER_SUPPLY_PROP_AUTHENTICATE,//wangjc add for authentication
@@ -3087,7 +3073,7 @@ static enum power_supply_property msm_batt_power_props[] = {
 /* OPPO 2013-09-30 wangjc Add end */
 
 #ifdef CONFIG_VENDOR_EDIT
-	POWER_SUPPLY_PROP_CHG_PROTECT_STATUS,
+	POWER_SUPPLY_PROP_AUTHENTIC,
 #endif
 };
 
@@ -3585,11 +3571,10 @@ get_prop_charge_full(struct qpnp_chg_chip *chip)
 			  POWER_SUPPLY_PROP_CHARGE_FULL, &ret);
 		return ret.intval;
 	} else {
-		pr_debug("No BMS supply registered return default_charge_full_mah\n");
+		pr_debug("No BMS supply registered return 0\n");
 	}
-#ifdef CONFIG_VENDOR_EDIT
-	return chip->default_charge_full_mah;
-#endif
+
+	return 0;
 }
 
 #define DEFAULT_CAPACITY	50
@@ -4070,7 +4055,7 @@ qpnp_batt_power_get_property(struct power_supply *psy,
 /* OPPO 2013-08-13 wangjc Add begin for charger voltage. */
 #ifdef CONFIG_VENDOR_EDIT
 	case POWER_SUPPLY_PROP_CHARGE_NOW:
-		val->intval = get_prop_charger_voltage_now(chip);
+		val->intval = get_prop_charger_voltage_now(chip) * 1000;
 		break;
 #ifdef CONFIG_BATTERY_BQ27541
 	//wangjc add for authentication
@@ -4085,16 +4070,9 @@ qpnp_batt_power_get_property(struct power_supply *psy,
 #endif
 /* OPPO 2013-08-13 wangjc Add end */
 #ifdef CONFIG_VENDOR_EDIT
-		case POWER_SUPPLY_PROP_CHG_PROTECT_STATUS:
+		case POWER_SUPPLY_PROP_AUTHENTIC:
 		 val->intval = get_prop_authentic(chip);
 			break;
-	/* david.liu@bsp, 2016/06/17  Add battery type */
-	case POWER_SUPPLY_PROP_BATTERY_TYPE:
-		if (get_prop_batt_present(chip))
-			val->strval = default_batt_type;
-		else
-			val->strval = missing_batt_type;
-		break;
 #endif
 
 	default:
@@ -5228,8 +5206,7 @@ qpnp_eoc_work(struct work_struct *work)
 	}
 
 check_again_later:
-	queue_delayed_work(system_power_efficient_wq,
-		&chip->eoc_work,
+	schedule_delayed_work(&chip->eoc_work,
 		msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
 	return;
 
@@ -5366,8 +5343,7 @@ qpnp_eoc_work(struct work_struct *work)
 	}
 
 stop_eoc:
-	queue_delayed_work(system_power_efficient_wq,
-		&chip->eoc_work,
+	schedule_delayed_work(&chip->eoc_work,
 		msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
 
 }
@@ -6652,7 +6628,6 @@ qpnp_charger_read_dt_props(struct qpnp_chg_chip *chip)
 	OF_PROP_READ(chip, warm_bat_mv, "warm-bat-mv", rc, 1);
 	OF_PROP_READ(chip, cool_bat_mv, "cool-bat-mv", rc, 1);
 	OF_PROP_READ(chip, little_cool_bat_mv, "little-cool-bat-mv", rc, 1); /* yangfangbiao@oneplus.cn, 2015/01/06  Add for  sync with KK charge standard  */
-	OF_PROP_READ(chip, default_charge_full_mah, "charge-full-mah", rc, 1);
 #endif
 /* OPPO 2013-11-02 wangjc Add end */
 
@@ -8061,10 +8036,9 @@ static void update_heartbeat(struct work_struct *work)
 		}
 		//lfc add for disable normal charge end
 		/*update time 6s*/
-		queue_delayed_work(system_power_efficient_wq,
-			&chip->update_heartbeat_work,
-			round_jiffies_relative(msecs_to_jiffies
-				(BATT_HEARTBEAT_INTERVAL)));
+		schedule_delayed_work(&chip->update_heartbeat_work,
+				      round_jiffies_relative(msecs_to_jiffies
+							     (BATT_HEARTBEAT_INTERVAL)));
 		return;
 	}
 	if(charge_type == POWER_SUPPLY_TYPE_USB_DCP) {
@@ -8090,10 +8064,9 @@ static void update_heartbeat(struct work_struct *work)
 	power_supply_changed(&chip->batt_psy);
 	
 	/*update time 6s*/
-	queue_delayed_work(system_power_efficient_wq,
-		&chip->update_heartbeat_work,
-		round_jiffies_relative(msecs_to_jiffies
-			(BATT_HEARTBEAT_INTERVAL)));
+	schedule_delayed_work(&chip->update_heartbeat_work,
+			      round_jiffies_relative(msecs_to_jiffies
+						     (BATT_HEARTBEAT_INTERVAL)));
 	//qpnp_dump_info(chip);
 }
 
@@ -8467,6 +8440,7 @@ qpnp_charger_probe(struct spmi_device *spmi)
 		pr_err("kzalloc() failed.\n");
 		return -ENOMEM;
 	}
+
 	chip->prev_usb_max_ma = -EINVAL;
 	chip->fake_battery_soc = -EINVAL;
 	chip->dev = &(spmi->dev);
@@ -8836,8 +8810,7 @@ qpnp_charger_probe(struct spmi_device *spmi)
 
 /* OPPO 2013-10-16 wangjc Delete begin for use bq charger */
 #ifndef CONFIG_BQ24196_CHARGER
-	queue_delayed_work(system_power_efficient_wq,
-		&chip->aicl_check_work,
+	schedule_delayed_work(&chip->aicl_check_work,
 		msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
 #endif
 /* OPPO 2013-10-16 wangjc Delete end */
@@ -8849,10 +8822,9 @@ qpnp_charger_probe(struct spmi_device *spmi)
 
 	INIT_DELAYED_WORK(&chip->update_heartbeat_work,
 							update_heartbeat);
-	queue_delayed_work(system_power_efficient_wq,
-		&chip->update_heartbeat_work,
-		round_jiffies_relative(msecs_to_jiffies
-			(BATT_HEARTBEAT_INTERVAL)));
+	schedule_delayed_work(&chip->update_heartbeat_work,
+			      round_jiffies_relative(msecs_to_jiffies
+						(BATT_HEARTBEAT_INTERVAL)));
 /*OPPO 2013-10-24 liaofuchun add begin for bq24196 charger*/
 #ifdef CONFIG_BQ24196_CHARGER
 	INIT_WORK(&chip->stop_charge_work,qpnp_stop_charge);

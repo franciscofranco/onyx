@@ -326,10 +326,15 @@ struct qpnp_chg_chip {
 	bool				bat_is_overheat;
 	bool				bat_is_little_cool;
 	bool				bat_is_little_cold;
-	bool				bat_is_cool2;
 	bool				chg_show_temp;
-#endif
+#endif	
 	bool				chg_done;
+#ifdef CONFIG_VENDOR_EDIT
+	// add by xcb
+	int				chg_status;
+
+#endif
+
 	bool				charger_monitor_checked;
 	bool				usb_present;
 	u8				usbin_health;
@@ -381,7 +386,7 @@ struct qpnp_chg_chip {
 	// add by xcb
 	unsigned int			little_cool_bat_mv;
 	unsigned int			little_cold_bat_mv;
-#endif
+#endif	
 	unsigned int			resume_delta_mv;
 	int				insertion_ocv_uv;
 	int				term_current;
@@ -399,6 +404,7 @@ struct qpnp_chg_chip {
 	int				overheat_bat_decidegc;
 	int				little_cool_bat_decidegc;
 	int				little_cold_bat_decidegc;
+
 #endif
 	int				fake_battery_soc;
 	unsigned int			safe_current;
@@ -448,8 +454,8 @@ struct qpnp_chg_chip {
 	// add by xcb
 	unsigned long	chg_start_sec;
 	bool			time_out;
-
 #endif
+
 };
 
 #ifdef VENDOR_EDIT/*If the torch is enabled, enable BATFET_LPM mode*/
@@ -875,6 +881,8 @@ qpnp_chg_check_usb_coarse_det(struct qpnp_chg_chip *chip)
 	return (usbin_chg_rt_sts & USB_COARSE_DET) ? 1 : 0;
 }
 
+
+
 static int
 qpnp_chg_check_usbin_health(struct qpnp_chg_chip *chip)
 {
@@ -915,6 +923,7 @@ qpnp_chg_check_usbin_health(struct qpnp_chg_chip *chip)
 		usbin_health = USBIN_UNKNOW;
 		pr_debug("Charger plug out\n");
 	}
+
 
 	return usbin_health;
 }
@@ -1113,6 +1122,7 @@ qpnp_chg_iusbmax_set(struct qpnp_chg_chip *chip, int mA)
 	chip->last_iusbmax = mA;
 	return oem_qpnp_chg_iusbmax_set(chip, mA);
 }
+
 #else
 static int
 qpnp_chg_iusbmax_set(struct qpnp_chg_chip *chip, int mA)
@@ -1169,6 +1179,7 @@ qpnp_chg_iusbmax_set(struct qpnp_chg_chip *chip, int mA)
 	return rc;
 }
 #endif
+
 
 #define QPNP_CHG_VINMIN_MIN_MV		4000
 #define QPNP_CHG_VINMIN_HIGH_MIN_MV	5600
@@ -1344,8 +1355,8 @@ qpnp_chg_usb_suspend_enable(struct qpnp_chg_chip *chip, int enable)
 			USB_SUSPEND_BIT,
 			enable ? USB_SUSPEND_BIT : 0, 1);
 }
-
 #ifdef CONFIG_VENDOR_EDIT
+
 static int
 qpnp_chg_charge_en(struct qpnp_chg_chip *chip, int enable)
 {
@@ -1368,6 +1379,7 @@ qpnp_chg_charge_en(struct qpnp_chg_chip *chip, int enable)
 		pr_err("USBIN_OVP, skipping\n");
 		return 0;
 	}
+	
 
 	return qpnp_chg_masked_write(chip, chip->chgr_base + CHGR_CHG_CTRL,
 			CHGR_CHG_EN,
@@ -1381,7 +1393,7 @@ qpnp_chg_charge_en(struct qpnp_chg_chip *chip, int enable)
 		pr_err("Battery not present, skipping\n");
 		return 0;
 	}
-
+	
 	pr_debug("charging %s\n", enable ? "enabled" : "disabled");
 	return qpnp_chg_masked_write(chip, chip->chgr_base + CHGR_CHG_CTRL,
 			CHGR_CHG_EN,
@@ -1482,17 +1494,9 @@ qpnp_chg_vbatdet_set(struct qpnp_chg_chip *chip, int vbatdet_mv)
 static void
 qpnp_chg_set_appropriate_vbatdet(struct qpnp_chg_chip *chip)
 {
-	if (chip->resuming_charging)
-		qpnp_chg_vbatdet_set(chip, chip->max_voltage_mv
-			+ chip->resume_delta_mv);
-	else if (chip->bat_is_cool) {
-		if (chip->bat_is_cool2 == true)
-			qpnp_chg_vbatdet_set(chip, chip->cool_bat_mv
-			- chip->resume_delta_mv - 120);
-		else
-			qpnp_chg_vbatdet_set(chip, chip->cool_bat_mv
-			- chip->resume_delta_mv);
-	}
+	if (chip->bat_is_cool)
+		qpnp_chg_vbatdet_set(chip, chip->cool_bat_mv
+			- chip->resume_delta_mv + 20);
 	else if (chip->bat_is_warm)
 		qpnp_chg_vbatdet_set(chip, chip->warm_bat_mv
 			- chip->resume_delta_mv + 20);
@@ -1502,11 +1506,16 @@ qpnp_chg_set_appropriate_vbatdet(struct qpnp_chg_chip *chip)
 	else if (chip->bat_is_little_cold)
 		qpnp_chg_vbatdet_set(chip, chip->little_cold_bat_mv
 			- chip->resume_delta_mv + 20 - 200);
+	else if (chip->resuming_charging)
+		qpnp_chg_vbatdet_set(chip, chip->max_voltage_mv
+			+ chip->resume_delta_mv);
 	else
 		qpnp_chg_vbatdet_set(chip, chip->max_voltage_mv
 			- chip->resume_delta_mv);
 }
+
 #else
+
 static void
 qpnp_chg_set_appropriate_vbatdet(struct qpnp_chg_chip *chip)
 {
@@ -1564,8 +1573,6 @@ qpnp_chg_vbatdet_lo_irq_handler(int irq, void *_chip)
 	u8 chg_sts = 0;
 	int rc;
 
-	pr_debug("vbatdet-lo triggered\n");
-
 	rc = qpnp_chg_read(chip, &chg_sts, INT_RT_STS(chip->chgr_base), 1);
 	if (rc)
 		pr_err("failed to read chg_sts rc=%d\n", rc);
@@ -1581,12 +1588,10 @@ qpnp_chg_vbatdet_lo_irq_handler(int irq, void *_chip)
 
 	pr_debug("psy changed usb_psy\n");
 	power_supply_changed(chip->usb_psy);
-#ifndef CONFIG_VENDOR_EDIT
 	if (chip->dc_chgpth_base) {
 		pr_debug("psy changed dc_psy\n");
 		power_supply_changed(&chip->dc_psy);
 	}
-#endif
 	if (chip->bat_if_base) {
 		pr_debug("psy changed batt_psy\n");
 		power_supply_changed(&chip->batt_psy);
@@ -1608,6 +1613,7 @@ qpnp_chg_usb_chg_gone_irq_handler(int irq, void *_chip)
 		pr_err("failed to read usb_chgpth_sts rc=%d\n", rc);
 
 	pr_info("chg_gone triggered\n");
+
 	if ((qpnp_chg_is_usb_chg_plugged_in(chip)
 			|| qpnp_chg_is_dc_chg_plugged_in(chip))
 			&& (usb_sts & CHG_GONE_IRQ)) {
@@ -1788,7 +1794,9 @@ qpnp_chg_set_appropriate_vddmax(struct qpnp_chg_chip *chip)
 		qpnp_chg_vddmax_and_trim_set(chip, chip->max_voltage_mv,
 				chip->delta_vddmax_mv);
 }
+
 #else
+
 /* JEITA compliance logic */
 static void
 qpnp_chg_set_appropriate_vddmax(struct qpnp_chg_chip *chip)
@@ -1920,7 +1928,6 @@ qpnp_chg_regulator_batfet_set(struct qpnp_chg_chip *chip, bool enable)
 			chip->bat_if_base + CHGR_BAT_IF_BATFET_CTRL4,
 			BATFET_LPM_MASK,
 			enable ? BATFET_NO_LPM : BATFET_LPM, 1);
-
 	return rc;
 }
 
@@ -1978,6 +1985,7 @@ qpnp_chg_usb_usbin_valid_irq_handler(int irq, void *_chip)
 				chip->time_out = false;
 				chip->usbin_health = USBIN_UNKNOW;
 #endif
+
 			}
 			if (!qpnp_is_dc_higher_prio(chip))
 				qpnp_chg_idcmax_set(chip, chip->maxinput_dc_ma);
@@ -1986,12 +1994,10 @@ qpnp_chg_usb_usbin_valid_irq_handler(int irq, void *_chip)
 			qpnp_chg_iusbmax_set(chip, QPNP_CHG_I_MAX_MIN_100);
 			qpnp_chg_iusb_trim_set(chip, chip->usb_trim_default);
 			chip->prev_usb_max_ma = -EINVAL;
-#ifdef CONFIG_VENDOR_EDIT
 			queue_delayed_work(system_power_efficient_wq,
 				&chip->eoc_work,
 				msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
 			pm_stay_awake(chip->dev);
-#endif
 		} else {
 			/* when OVP clamped usbin, and then decrease
 			 * the charger voltage to lower than the OVP
@@ -2028,6 +2034,7 @@ qpnp_chg_usb_usbin_valid_irq_handler(int irq, void *_chip)
 		//}
 		power_supply_set_online(chip->usb_psy, chip->usb_present);
 #endif
+
 		schedule_work(&chip->batfet_lcl_work);
 	}
 
@@ -2200,6 +2207,7 @@ qpnp_chg_dc_dcin_valid_irq_handler(int irq, void *_chip)
 		if (!dc_present && (!qpnp_chg_is_usb_chg_plugged_in(chip) ||
 					qpnp_chg_is_otg_en_set(chip))) {
 			chip->chg_done = false;
+
 		} else {
 			queue_delayed_work(system_power_efficient_wq,
 				&chip->eoc_work,
@@ -2223,10 +2231,8 @@ qpnp_chg_dc_dcin_valid_irq_handler(int irq, void *_chip)
 			}
 		}
 
-#ifndef CONFIG_VENDOR_EDIT
 		pr_debug("psy changed dc_psy\n");
 		power_supply_changed(&chip->dc_psy);
-#endif
 		pr_debug("psy changed batt_psy\n");
 		power_supply_changed(&chip->batt_psy);
 		schedule_work(&chip->batfet_lcl_work);
@@ -2257,12 +2263,10 @@ qpnp_chg_chgr_chg_failed_irq_handler(int irq, void *_chip)
 	}
 	pr_debug("psy changed usb_psy\n");
 	power_supply_changed(chip->usb_psy);
-#ifndef CONFIG_VENDOR_EDIT
 	if (chip->dc_chgpth_base) {
 		pr_debug("psy changed dc_psy\n");
 		power_supply_changed(&chip->dc_psy);
 	}
-#endif
 	return IRQ_HANDLED;
 }
 
@@ -2341,23 +2345,15 @@ qpnp_chg_chgr_chg_fastchg_irq_handler(int irq, void *_chip)
 		pr_debug("psy changed usb_psy\n");
 		power_supply_changed(chip->usb_psy);
 
-#ifndef CONFIG_VENDOR_EDIT
 		if (chip->dc_chgpth_base) {
 			pr_debug("psy changed dc_psy\n");
 			power_supply_changed(&chip->dc_psy);
 		}
-#endif
 
 		if (fastchg_on) {
-			chip->chg_done = false;
+			chip->chg_done = false;	
 			bypass_vbatdet_comp(chip, 1);
-#ifdef CONFIG_VENDOR_EDIT
-			if (chip->bat_is_warm || chip->bat_is_cool
-				|| chip->bat_is_little_cool
-				|| chip->bat_is_little_cold) {
-#else
-			if (chip->bat_is_warm || chip->bat_is_cool) {
-#endif
+			if (chip->bat_is_warm || chip->bat_is_cool || chip->bat_is_little_cool || chip->bat_is_little_cold) {
 				qpnp_chg_set_appropriate_vddmax(chip);
 				qpnp_chg_set_appropriate_battery_current(chip);
 			}
@@ -2387,7 +2383,7 @@ qpnp_chg_chgr_chg_fastchg_irq_handler(int irq, void *_chip)
 				switch_parallel_ovp_mode(chip, 0);
 #ifdef CONFIG_VENDOR_EDIT
 			// modify by xcb
-			if (!chip->bat_is_warm && !chip->bat_is_cold && !chip->bat_is_overheat && !chip->bat_is_little_cold)
+			if (!chip->bat_is_cool && !chip->bat_is_warm && !chip->bat_is_cold && !chip->bat_is_overheat && !chip->bat_is_little_cold)
 				bypass_vbatdet_comp(chip, 0);
 #else
 			if (!chip->bat_is_warm && !chip->bat_is_cool)
@@ -2435,7 +2431,8 @@ qpnp_batt_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_OVERHEAT_TEMP:
 	case POWER_SUPPLY_PROP_LITTLE_COOL_TEMP:
 	case POWER_SUPPLY_PROP_LITTLE_COLD_TEMP:
-#endif
+
+#endif	
 	case POWER_SUPPLY_PROP_CAPACITY:
 		return 1;
 	default:
@@ -2446,6 +2443,7 @@ qpnp_batt_property_is_writeable(struct power_supply *psy,
 }
 
 #ifndef CONFIG_VENDOR_EDIT
+
 static int
 qpnp_chg_buck_control(struct qpnp_chg_chip *chip, int enable)
 {
@@ -2608,26 +2606,26 @@ static enum power_supply_property msm_batt_power_props[] = {
 	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_COOL_TEMP,
 	POWER_SUPPLY_PROP_WARM_TEMP,
-#ifdef CONFIG_VENDOR_EDIT
+#ifdef CONFIG_VENDOR_EDIT	
 	// add by xcb
 	POWER_SUPPLY_PROP_COLD_TEMP,
 	POWER_SUPPLY_PROP_OVERHEAT_TEMP,
 	POWER_SUPPLY_PROP_LITTLE_COOL_TEMP,
 	POWER_SUPPLY_PROP_LITTLE_COLD_TEMP,
 	POWER_SUPPLY_PROP_TEMP_STATUS,
-#endif
+#endif	
 	POWER_SUPPLY_PROP_SYSTEM_TEMP_LEVEL,
 	POWER_SUPPLY_PROP_CYCLE_COUNT,
 	POWER_SUPPLY_PROP_VOLTAGE_OCV,
-
+	
 #ifdef CONFIG_VENDOR_EDIT
 	POWER_SUPPLY_PROP_CHARGE_NOW,
-	POWER_SUPPLY_PROP_CHG_PROTECT_STATUS,
+	POWER_SUPPLY_PROP_AUTHENTIC,
 #endif
 
 #ifdef CONFIG_VENDOR_EDIT
 	POWER_SUPPLY_PROP_CHARGE_TIMEOUT,
-	POWER_SUPPLY_PROP_STATUS_FOR_BMS,
+	POWER_SUPPLY_PROP_CHARGE_DONE,
 	POWER_SUPPLY_PROP_CHARGE_OVP,
 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX,
 #endif
@@ -2734,6 +2732,7 @@ get_prop_batt_present(struct qpnp_chg_chip *chip)
 	};
 	return (batt_present & BATT_PRES_BIT) ? 1 : 0;
 }
+
 
 #define BATT_TEMP_HOT	BIT(6)
 #define BATT_TEMP_OK	BIT(7)
@@ -2914,11 +2913,7 @@ get_prop_capacity(struct qpnp_chg_chip *chip)
 		if (battery_status != POWER_SUPPLY_STATUS_CHARGING
 				&& bms_status != POWER_SUPPLY_STATUS_CHARGING
 				&& charger_in
-#ifdef CONFIG_VENDOR_EDIT
-				//&& !chip->bat_is_cool
-#else
 				&& !chip->bat_is_cool
-#endif
 				&& !chip->bat_is_warm
 #ifdef CONFIG_VENDOR_EDIT
 				&& !chip->bat_is_cold // add by xcb
@@ -2953,9 +2948,8 @@ get_prop_capacity(struct qpnp_chg_chip *chip)
 
 #define DEFAULT_TEMP		250
 #define MAX_TOLERABLE_BATT_TEMP_DDC	680
-#ifdef CONFIG_VENDOR_EDIT
-static void
-sort_battery_temp(int64_t  battery_pool[], int battery_pool_size)
+
+static void sort_battery_temp(int64_t  battery_pool[], int battery_pool_size)
 {
 	int i,j;
 	int64_t t;
@@ -2995,27 +2989,6 @@ get_prop_batt_temp(struct qpnp_chg_chip *chip)
 
 	return (int)results.physical;
 }
-#else
-static int
-get_prop_batt_temp(struct qpnp_chg_chip *chip)
-{
-	int rc = 0;
-	struct qpnp_vadc_result results;
-
-	if (chip->use_default_batt_values || !get_prop_batt_present(chip))
-		return DEFAULT_TEMP;
-
-	rc = qpnp_vadc_read(chip->vadc_dev, LR_MUX1_BATT_THERM, &results);
-	if (rc) {
-		pr_debug("Unable to read batt temperature rc=%d\n", rc);
-		return 0;
-	}
-	pr_debug("get_bat_temp %d, %lld\n",
-		results.adc_code, results.physical);
-
-	return (int)results.physical;
-}
-#endif
 
 #ifdef CONFIG_VENDOR_EDIT
 #define BATT_REMOVE_TEMP -400
@@ -3063,10 +3036,11 @@ get_prop_batt_health(struct qpnp_chg_chip *chip)
 	else if (chip->bat_is_little_cool)
 		return POWER_SUPPLY_HEALTH_LITTLE_COOL;
 	*/
-
+	
 	return POWER_SUPPLY_HEALTH_GOOD;
 
 }
+
 #endif
 
 static int get_prop_cycle_count(struct qpnp_chg_chip *chip)
@@ -3179,14 +3153,17 @@ qpnp_batt_external_power_changed(struct power_supply *psy)
 				schedule_work(&chip->reduce_power_stage_work);
 			}
 		}
+
 #ifdef CONFIG_VENDOR_EDIT
 		pr_debug("psy changed batt_psy\n");
 		power_supply_changed(&chip->batt_psy);
 #endif
+
 	}
 
 skip_set_iusb_max:
 	pr_debug("end of power supply changed\n");
+
 #ifndef CONFIG_VENDOR_EDIT
 	pr_debug("psy changed batt_psy\n");
 	power_supply_changed(&chip->batt_psy);
@@ -3293,7 +3270,7 @@ static int get_prop_authentic(struct qpnp_chg_chip *chip)
 	else if (chip->bat_is_cool && chip->chg_show_temp) {
 		//if (printk_ratelimit())
 		//	pr_info("CHG_PROTECT_TEMP_REGION_COOL\n");
-		return 0;
+		return CHG_PROTECT_TEMP_REGION_COOL;
 	}
 	else if (chip->bat_is_warm && chip->chg_show_temp) {
 		//if (printk_ratelimit())
@@ -3322,7 +3299,13 @@ static int get_prop_authentic(struct qpnp_chg_chip *chip)
 	}
 	else
 		return 0;
+
+
 }
+
+#endif
+
+#ifdef CONFIG_VENDOR_EDIT
 
 static
 int get_prop_temp_status(struct qpnp_chg_chip *chip)
@@ -3349,8 +3332,10 @@ int get_prop_temp_status(struct qpnp_chg_chip *chip)
 		return POWER_SUPPLY_TEMP_NORMAL;
 }
 
-static int qpnp_chg_ibatmax_get(struct qpnp_chg_chip *chip, int *chg_current);
 #endif
+
+static int qpnp_chg_ibatmax_get(struct qpnp_chg_chip *chip, int *chg_current);
+
 
 static int
 qpnp_batt_power_get_property(struct power_supply *psy,
@@ -3364,16 +3349,23 @@ qpnp_batt_power_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_STATUS:
 		val->intval = get_prop_batt_status(chip);
 #ifdef CONFIG_VENDOR_EDIT
-		if (val->intval == POWER_SUPPLY_STATUS_FULL
-			&& (!chip->bat_is_warm && !chip->bat_is_cold && !chip->bat_is_overheat && !chip->bat_is_little_cold)
+		if (val->intval == POWER_SUPPLY_STATUS_FULL 
+			&& (!chip->bat_is_cool && !chip->bat_is_warm && !chip->bat_is_cold && !chip->bat_is_overheat && !chip->bat_is_little_cold)
 			&& get_prop_capacity(chip) < 100) {
 			val->intval = POWER_SUPPLY_STATUS_CHARGING;
 		}
 
+		if (val->intval == POWER_SUPPLY_STATUS_FULL && chip->chg_status != POWER_SUPPLY_STATUS_FULL) {
+			power_supply_changed(&chip->batt_psy);
+			pr_info("power_supply_changed: POWER_SUPPLY_STATUS_FULL\n");
+		}
+	
+		chip->chg_status = val->intval;
 		break;
-	case POWER_SUPPLY_PROP_STATUS_FOR_BMS:
-		val->intval = get_prop_batt_status(chip);;
+	case POWER_SUPPLY_PROP_CHARGE_DONE:
+		val->intval = (int)chip->chg_done;
 #endif
+
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
 		val->intval = get_prop_charge_type(chip);
@@ -3423,7 +3415,8 @@ qpnp_batt_power_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_LITTLE_COLD_TEMP:
 		val->intval = chip->little_cold_bat_decidegc;
 		break;
-#endif
+
+#endif		
 	case POWER_SUPPLY_PROP_CAPACITY:
 		val->intval = get_prop_capacity(chip);
 		break;
@@ -3468,11 +3461,13 @@ qpnp_batt_power_get_property(struct power_supply *psy,
 		break;
 #ifdef CONFIG_VENDOR_EDIT
 	case POWER_SUPPLY_PROP_CHARGE_NOW:
-		val->intval = qpnp_chg_get_vusbin_uv(chip) / 1000;
+		val->intval = qpnp_chg_get_vusbin_uv(chip);
 		break;
-	case POWER_SUPPLY_PROP_CHG_PROTECT_STATUS:
+	case POWER_SUPPLY_PROP_AUTHENTIC:
 	 val->intval = get_prop_authentic(chip);
 		break;
+#endif
+#ifdef CONFIG_VENDOR_EDIT
 	case POWER_SUPPLY_PROP_CHARGE_TIMEOUT:
 		val->intval = (int)chip->time_out;
 		break;
@@ -3578,33 +3573,6 @@ qpnp_chg_ibatterm_set(struct qpnp_chg_chip *chip, int term_current)
 
 #define QPNP_CHG_IBATMAX_MIN	50
 #define QPNP_CHG_IBATMAX_MAX	3250
-
-#ifdef CONFIG_VENDOR_EDIT
-static int
-qpnp_chg_ibatmax_set(struct qpnp_chg_chip *chip, int chg_current)
-{
-	u8 temp1, temp2;
-
-	if (chg_current < QPNP_CHG_IBATMAX_MIN
-			|| chg_current > QPNP_CHG_IBATMAX_MAX) {
-		pr_err("bad mA=%d asked to set\n", chg_current);
-		return -EINVAL;
-	}
-	pr_info("setting ibatmax = %dmA\n", chg_current);
-	temp1 = chg_current / QPNP_CHG_I_STEP_MA;
-
-	qpnp_chg_read(chip, &temp2, chip->chgr_base + CHGR_IBAT_MAX, 1);
-
-	if (temp1 == temp2) {
-		pr_debug("temp1 == temp2: %dmA\n", chg_current);
-		return 0;
-	}
-	else {
-		return qpnp_chg_masked_write(chip, chip->chgr_base + CHGR_IBAT_MAX,
-			QPNP_CHG_I_MASK, temp1, 1);
-	}
-}
-#else
 static int
 qpnp_chg_ibatmax_set(struct qpnp_chg_chip *chip, int chg_current)
 {
@@ -3615,11 +3583,11 @@ qpnp_chg_ibatmax_set(struct qpnp_chg_chip *chip, int chg_current)
 		pr_err("bad mA=%d asked to set\n", chg_current);
 		return -EINVAL;
 	}
+	pr_debug("setting ibatmax = %dmA\n", chg_current);
 	temp = chg_current / QPNP_CHG_I_STEP_MA;
 	return qpnp_chg_masked_write(chip, chip->chgr_base + CHGR_IBAT_MAX,
 			QPNP_CHG_I_MASK, temp, 1);
 }
-#endif
 
 static int
 qpnp_chg_ibatmax_get(struct qpnp_chg_chip *chip, int *chg_current)
@@ -3648,7 +3616,7 @@ static int qpnp_chg_tchg_max_set(struct qpnp_chg_chip *chip, int minutes)
 {
 	u8 temp;
 	int rc;
-
+	
 #ifdef CONFIG_VENDOR_EDIT
 	// modify by xcb
 	rc = qpnp_chg_masked_write(chip, chip->chgr_base + CHGR_TCHG_MAX_EN,
@@ -3700,16 +3668,7 @@ qpnp_chg_set_appropriate_battery_current(struct qpnp_chg_chip *chip)
 	unsigned int chg_current = chip->max_bat_chg_current;
 
 	if (chip->bat_is_cool)
-	{
-		unsigned int chg_cool_current;
-
-		if (chip->bat_is_cool2)
-			chg_cool_current = 350;
-		else
-			chg_cool_current = 600;
-
-		chg_current = min(chg_current, chg_cool_current);
-	}
+		chg_current = min(chg_current, chip->cool_bat_chg_ma);
 
 	if (chip->bat_is_warm)
 		chg_current = min(chg_current, chip->warm_bat_chg_ma);
@@ -3718,7 +3677,7 @@ qpnp_chg_set_appropriate_battery_current(struct qpnp_chg_chip *chip)
 		chg_current = min(chg_current, chip->little_cool_bat_chg_ma);
 	if (chip->bat_is_little_cold)
 		chg_current = min(chg_current, chip->little_cold_bat_chg_ma);
-
+	
 	//if (chip->therm_lvl_sel != 0 && chip->thermal_mitigation)
 	//	chg_current = min(chg_current,
 	//		chip->thermal_mitigation[chip->therm_lvl_sel]);
@@ -3726,7 +3685,9 @@ qpnp_chg_set_appropriate_battery_current(struct qpnp_chg_chip *chip)
 	pr_debug("setting %d mA\n", chg_current);
 	qpnp_chg_ibatmax_set(chip, chg_current);
 }
+
 #else
+
 static void
 qpnp_chg_set_appropriate_battery_current(struct qpnp_chg_chip *chip)
 {
@@ -3830,8 +3791,6 @@ qpnp_chg_input_current_settled(struct qpnp_chg_chip *chip)
 	u8 reg, chgr_sts, ibat_trim, i;
 	bool usb_present = qpnp_chg_is_usb_chg_plugged_in(chip);
 
-	pr_info("AICL settled\n");
-
 	if (!usb_present) {
 		pr_debug("Ignoring AICL settled, since USB is removed\n");
 		return 0;
@@ -3932,15 +3891,10 @@ qpnp_chg_input_current_settled(struct qpnp_chg_chip *chip)
 		}
 	}
 
-#ifdef CONFIG_VENDOR_EDIT
-/* david.liu@bsp, 20160627, fix charging current limit */
-	qpnp_chg_set_appropriate_battery_current(chip);
-#else
 	/* restore IBATMAX */
 	rc = qpnp_chg_ibatmax_set(chip, ibat_max_ma);
 	if (rc)
 		pr_err("failed to restore ibatmax rc=%d\n", rc);
-#endif
 
 	return rc;
 }
@@ -3995,6 +3949,7 @@ qpnp_batt_system_temp_level_set(struct qpnp_chg_chip *chip, int lvl_sel)
 		pr_info("system_temp_level %d\n", lvl_sel);
 		chip->therm_lvl_sel = lvl_sel;
 #ifndef CONFIG_VENDOR_EDIT
+
 		if (lvl_sel == (chip->thermal_levels - 1)) {
 			/* disable charging if highest value selected */
 			qpnp_chg_buck_control(chip, 0);
@@ -4020,11 +3975,16 @@ qpnp_batt_system_temp_level_set(struct qpnp_chg_chip *chip, int lvl_sel)
 			qpnp_chg_set_appropriate_battery_current(chip);
 #endif
 #ifndef CONFIG_VENDOR_EDIT
+
 		}
 #endif
+
 	} else {
 		pr_err("Unsupported level selected %d\n", lvl_sel);
 	}
+#ifdef CONFIG_VENDOR_EDIT
+	power_supply_changed(&chip->batt_psy);
+#endif
 }
 
 /*
@@ -4447,6 +4407,7 @@ static struct regulator_ops qpnp_chg_batfet_vreg_ops = {
 };
 
 #ifdef CONFIG_VENDOR_EDIT
+
 #define MAX_DELTA_VDD_MAX_MV			80
 #define MIN_DELTA_MV_TO_INCREASE_VDD_MAX	16
 #define MIN_DELTA_MV_TO_DECREASE_VDD_MAX	-8
@@ -4467,7 +4428,7 @@ qpnp_chg_adjust_vddmax(struct qpnp_chg_chip *chip, int vbat_mv, int ibat_ma)
 	else
 		delta_mv = target_mv - vbat_mv;
 
-
+	
 	if (delta_mv > MIN_DELTA_MV_TO_DECREASE_VDD_MAX &&
 		delta_mv < MIN_DELTA_MV_TO_INCREASE_VDD_MAX) {
 		pr_debug("vbat is not enough to inc/decrease vdd (%d %d %d)\n",
@@ -4488,7 +4449,9 @@ qpnp_chg_adjust_vddmax(struct qpnp_chg_chip *chip, int vbat_mv, int ibat_ma)
 		chip->delta_vddmax_mv, closest_delta_mv, delta_mv);
 	qpnp_chg_set_appropriate_vddmax(chip);
 }
+
 #else
+
 #define MIN_DELTA_MV_TO_INCREASE_VDD_MAX	8
 #define MAX_DELTA_VDD_MAX_MV			80
 #define VDD_MAX_CENTER_OFFSET			4
@@ -4515,6 +4478,7 @@ qpnp_chg_adjust_vddmax(struct qpnp_chg_chip *chip, int vbat_mv)
 	qpnp_chg_set_appropriate_vddmax(chip);
 }
 #endif
+
 
 #ifdef CONFIG_VENDOR_EDIT
 static int get_current_time(unsigned long *now_tm_sec)
@@ -4551,11 +4515,14 @@ close_time:
 }
 #endif
 
+
 #define CONSECUTIVE_COUNT	3
 #define VBATDET_MAX_ERR_MV	50
 
 #ifdef CONFIG_VENDOR_EDIT
+
 #define USBIN_OVP_THR 5800000
+
 // 10 hours = 10*60*60 seconds
 #define CHARGE_TIME_OUT 36000
 
@@ -4587,6 +4554,7 @@ qpnp_eoc_work(struct work_struct *work)
 		chip->usbin_health = USBIN_OK;
 	}
 
+	
 	qpnp_chg_charge_en(chip, !chip->charging_disabled);
 
 	rc = qpnp_chg_read(chip, &batt_sts, INT_RT_STS(chip->bat_if_base), 1);
@@ -4645,12 +4613,6 @@ qpnp_eoc_work(struct work_struct *work)
 		}
 		*/
 
-		if (chip->bat_is_cool) {
-			if (vbat_mv >= 4180 || chip->bat_is_cool2 == true)
-				qpnp_chg_ibatmax_set(chip, 350);
-			else
-				qpnp_chg_ibatmax_set(chip, 600);
-		}
 
 		if (buck_sts & VDD_LOOP_IRQ)
 			qpnp_chg_adjust_vddmax(chip, vbat_mv, ibat_ma);
@@ -4661,26 +4623,21 @@ qpnp_eoc_work(struct work_struct *work)
 		} else if ((ibat_ma * -1) > chip->term_current) {
 			pr_debug("Not at EOC, battery current too high\n");
 			count = 0;
-#ifdef CONFIG_VENDOR_EDIT
-		} else if (ibat_ma > 15) {
-			pr_debug("Charging but system demand increased\n");
-			count = 0;
-#else
 		} else if (ibat_ma > 0) {
 			pr_debug("Charging but system demand increased\n");
 			count = 0;
-#endif
 		} else {
 			if (count == CONSECUTIVE_COUNT) {
 
-				if (!chip->bat_is_warm && !chip->bat_is_cold && !chip->bat_is_overheat && !chip->bat_is_little_cold) {
+				if (!chip->bat_is_cool && !chip->bat_is_warm && !chip->bat_is_cold && !chip->bat_is_overheat && !chip->bat_is_little_cold) {
 					pr_info("End of Charging\n");
 					chip->chg_done = true;
-
+					
 				} else {
 					pr_info("stop charging: battery temp = %d, vddmax = %d reached\n",
 						get_prop_batt_temp(chip), qpnp_chg_vddmax_get(chip));
 				}
+			
 				chip->chg_show_temp = true;
 
 				chip->delta_vddmax_mv = 0;
@@ -4691,32 +4648,22 @@ qpnp_eoc_work(struct work_struct *work)
 				qpnp_chg_charge_en(chip,
 						!chip->charging_disabled);
 				pr_info("psy changed batt_psy\n");
-				power_supply_changed(&chip->batt_psy);
+				//power_supply_changed(&chip->batt_psy);
 				qpnp_chg_enable_irq(&chip->chg_vbatdet_lo);
-				goto check_again_later;
+				goto stop_eoc;
 			} else {
 				count += 1;
 				pr_info("EOC count = %d\n", count);
 			}
 		}
 	} else {
-
+		pr_info("not charging\n");
 		if (!chip->charging_disabled) {
 			chip->chg_show_temp = true;
-			pr_debug("psy changed batt_psy\n");
-			power_supply_changed(&chip->batt_psy);
 		}
-
-		if (get_prop_batt_status(chip) == POWER_SUPPLY_STATUS_FULL) {
-			if ((!chip->bat_is_warm && !chip->bat_is_cold && !chip->bat_is_overheat && !chip->bat_is_little_cold)
-				&& get_prop_capacity(chip) < 100) {
-				pr_info("End of Charging, but SOC != 100\n");
-				goto check_again_later;
-			}
-		}
-		pr_info("not charging\n");
 		goto stop_eoc;
 	}
+
 
 	if (chip->chg_start_sec == 0)
 		get_current_time(&chip->chg_start_sec);
@@ -4746,9 +4693,11 @@ stop_eoc:
 	count = 0;
 	pm_relax(chip->dev);
 
-	//power_supply_changed(&chip->batt_psy);
+	power_supply_changed(&chip->batt_psy);
 }
+
 #else
+
 static void
 qpnp_eoc_work(struct work_struct *work)
 {
@@ -4843,10 +4792,8 @@ qpnp_eoc_work(struct work_struct *work)
 							? "cool" : "warm",
 						qpnp_chg_vddmax_get(chip));
 				}
-#ifdef CONFIG_VENDOR_EDIT
 				chip->delta_vddmax_mv = 0;
 				qpnp_chg_set_appropriate_vddmax(chip);
-#endif
 				qpnp_chg_charge_en(chip, 0);
 				/* sleep for a second before enabling */
 				msleep(2000);
@@ -4914,8 +4861,8 @@ qpnp_chg_soc_check_work(struct work_struct *work)
 #ifdef CONFIG_VENDOR_EDIT
 	union power_supply_propval ret = {0,};
 	int battery_status, bms_status, soc, charger_in;
-	int vbat_mv = 0;
-
+	//int vbat_mv = 0, i = 0;
+	
 	if (!get_prop_batt_present(chip))
 		return;
 
@@ -4924,8 +4871,12 @@ qpnp_chg_soc_check_work(struct work_struct *work)
 				POWER_SUPPLY_PROP_CAPACITY, &ret);
 		soc = ret.intval;
 
-		vbat_mv += (get_prop_battery_voltage_now(chip) / 1000);
+		/*
+		for (; i < 3; i++)
+			vbat_mv += (get_prop_battery_voltage_now(chip) / 1000);
 
+		vbat_mv /= 3;
+		*/	
 		battery_status = get_prop_batt_status(chip);
 		chip->bms_psy->get_property(chip->bms_psy,
 				POWER_SUPPLY_PROP_STATUS, &ret);
@@ -4936,7 +4887,7 @@ qpnp_chg_soc_check_work(struct work_struct *work)
 		if (battery_status != POWER_SUPPLY_STATUS_CHARGING /* && bms_status != POWER_SUPPLY_STATUS_CHARGING */
 				&& charger_in && !chip->resuming_charging && !chip->charging_disabled) {
 
-			if (!chip->bat_is_warm && !chip->bat_is_cold
+			if (!chip->bat_is_cool && !chip->bat_is_warm && !chip->bat_is_cold
 					&& !chip->bat_is_overheat && !chip->bat_is_little_cold) {
 				if (soc >= 100)	{
 					chip->chg_done = true;
@@ -4954,24 +4905,16 @@ qpnp_chg_soc_check_work(struct work_struct *work)
 					qpnp_chg_charge_en(chip, !chip->charging_disabled);
 				}
 			}
-			else if ((chip->bat_is_warm && vbat_mv < chip->warm_bat_mv)
-					|| (chip->bat_is_little_cold && vbat_mv < chip->little_cold_bat_mv)) {
-
-				pr_info("resuming charging at vbat_mv %dmv\n", vbat_mv);
-				chip->resuming_charging = true;
-				qpnp_chg_irq_wake_enable(&chip->chg_fastchg);
-				qpnp_chg_set_appropriate_vbatdet(chip);
-				qpnp_chg_charge_en(chip, !chip->charging_disabled);
-
-			}
 		}
 	}
 #else
 	get_prop_capacity(chip);
 #endif
+
 }
 
 #ifdef CONFIG_VENDOR_EDIT
+
 // modify by xcb for different charging current set under different temperature
 #define HYSTERISIS_DECIDEGC 20
 static void
@@ -4979,7 +4922,6 @@ qpnp_chg_adc_notification(enum qpnp_tm_state state, void *ctx)
 {
 	struct qpnp_chg_chip *chip = ctx;
 	bool bat_warm = false, bat_cool = false, bat_cold = false, bat_overheat = false,  bat_little_cool = false, bat_little_cold = false;
-	bool bat_cool2 = chip->bat_is_cool2;
 	int temp;
 
 	if (state >= ADC_TM_STATE_NUM) {
@@ -5018,23 +4960,12 @@ qpnp_chg_adc_notification(enum qpnp_tm_state state, void *ctx)
 		} else if (temp >= chip->little_cold_bat_decidegc + HYSTERISIS_DECIDEGC) {
 			/* little Cold to cool */
 			bat_cool = true;
-			//chip->adc_param.low_temp = chip->little_cold_bat_decidegc;
-			//chip->adc_param.high_temp = chip->cool_bat_decidegc;
-			if (temp < chip->little_cold_bat_decidegc + 50) {
-				chip->adc_param.low_temp = chip->little_cold_bat_decidegc;
-				chip->adc_param.high_temp = chip->little_cold_bat_decidegc + 50;
-				bat_cool2 = true;
-			}
-			else
-			{
-				chip->adc_param.low_temp = chip->little_cold_bat_decidegc + 50;
-				chip->adc_param.high_temp = chip->cool_bat_decidegc;
-				bat_cool2 = false;
-			}
+			chip->adc_param.low_temp = chip->little_cold_bat_decidegc;
+			chip->adc_param.high_temp = chip->cool_bat_decidegc;
 			chip->adc_param.state_request = ADC_TM_HIGH_LOW_THR_ENABLE;
 		} else if (temp >= chip->cold_bat_decidegc + HYSTERISIS_DECIDEGC) {
 			/* Cold to little cold */
-			bat_little_cold = true;
+			bat_little_cold = true;		
 			chip->adc_param.low_temp = chip->cold_bat_decidegc;
 			chip->adc_param.high_temp = chip->little_cold_bat_decidegc + HYSTERISIS_DECIDEGC;
 			chip->adc_param.state_request = ADC_TM_HIGH_LOW_THR_ENABLE;
@@ -5056,19 +4987,8 @@ qpnp_chg_adc_notification(enum qpnp_tm_state state, void *ctx)
 		} else if (temp <= chip->cool_bat_decidegc - HYSTERISIS_DECIDEGC){
 			/* little cool to cool */
 			bat_cool = true;
-			//chip->adc_param.low_temp = chip->little_cold_bat_decidegc;
-			//chip->adc_param.high_temp = chip->cool_bat_decidegc;
-			if (temp < chip->little_cold_bat_decidegc + 50) {
-				chip->adc_param.low_temp = chip->little_cold_bat_decidegc;
-				chip->adc_param.high_temp = chip->little_cold_bat_decidegc + 50;
-				bat_cool2 = true;
-			}
-			else
-			{
-				chip->adc_param.low_temp = chip->little_cold_bat_decidegc + 50;
-				chip->adc_param.high_temp = chip->cool_bat_decidegc;
-				bat_cool2 = false;
-			}
+			chip->adc_param.low_temp = chip->little_cold_bat_decidegc;
+			chip->adc_param.high_temp = chip->cool_bat_decidegc;
 			chip->adc_param.state_request = ADC_TM_HIGH_LOW_THR_ENABLE;
 		}  else if (temp <= chip->little_cool_bat_decidegc - HYSTERISIS_DECIDEGC){
 			/* Normal to little cool */
@@ -5093,16 +5013,13 @@ qpnp_chg_adc_notification(enum qpnp_tm_state state, void *ctx)
 
 	if (chip->bat_is_cool ^ bat_cool || chip->bat_is_warm ^ bat_warm
 			|| chip->bat_is_cold ^ bat_cold || chip->bat_is_overheat ^ bat_overheat
-			|| chip->bat_is_little_cool ^ bat_little_cool || chip->bat_is_little_cold ^ bat_little_cold
-			|| chip->bat_is_cool2 ^ bat_cool2) {
+			|| chip->bat_is_little_cool ^ bat_little_cool || chip->bat_is_little_cold ^ bat_little_cold) {
 		chip->bat_is_cool = bat_cool;
 		chip->bat_is_warm = bat_warm;
 		chip->bat_is_cold = bat_cold;
 		chip->bat_is_overheat = bat_overheat;
 		chip->bat_is_little_cool = bat_little_cool;
 		chip->bat_is_little_cold = bat_little_cold;
-
-		chip->bat_is_cool2 = bat_cool2;
 
 		/**
 		 * set appropriate voltages and currents.
@@ -5116,7 +5033,7 @@ qpnp_chg_adc_notification(enum qpnp_tm_state state, void *ctx)
 			chip->thermal_disable_charge = true;
 			qpnp_chg_charge_en(chip, !chip->thermal_disable_charge);
 
-		} else if (bat_warm || bat_little_cold) {
+		} else if (bat_cool || bat_warm || bat_little_cold) {
 			chip->resuming_charging = false;
 			chip->thermal_disable_charge = false;
 			qpnp_chg_set_appropriate_vbatdet(chip);
@@ -5129,7 +5046,6 @@ qpnp_chg_adc_notification(enum qpnp_tm_state state, void *ctx)
 			qpnp_chg_charge_en(chip, !chip->charging_disabled);
 			qpnp_chg_charge_en(chip, chip->charging_disabled);
 			qpnp_chg_charge_en(chip, !chip->charging_disabled);
-			schedule_work(&chip->soc_check_work);
 		} else {
 			chip->thermal_disable_charge = false;
 			bypass_vbatdet_comp(chip, 0);
@@ -5185,12 +5101,12 @@ qpnp_chg_adc_notification_init(struct qpnp_chg_chip	*chip)
 		chip->adc_param.high_temp = chip->cool_bat_decidegc;
 		chip->adc_param.state_request = ADC_TM_HIGH_LOW_THR_ENABLE;
 	} else if (temp >= chip->cold_bat_decidegc) {
-		bat_little_cold = true;
+		bat_little_cold = true;		
 		chip->adc_param.low_temp = chip->cold_bat_decidegc;
 		chip->adc_param.high_temp = chip->little_cold_bat_decidegc + HYSTERISIS_DECIDEGC;
 		chip->adc_param.state_request = ADC_TM_HIGH_LOW_THR_ENABLE;
 	} else if (temp < chip->cold_bat_decidegc) {
-		bat_cold = true;
+		bat_cold = true;		
 		chip->adc_param.high_temp = chip->cold_bat_decidegc + HYSTERISIS_DECIDEGC;
 		chip->adc_param.state_request = ADC_TM_WARM_THR_ENABLE;
 	}
@@ -5229,7 +5145,7 @@ qpnp_chg_adc_notification_init(struct qpnp_chg_chip	*chip)
 		qpnp_chg_set_appropriate_vddmax(chip);
 		qpnp_chg_set_appropriate_battery_current(chip);
 	}
-
+	
 	pr_err("overheat %d, warm %d, cool %d, little cool %d, cold %d, little cold %d, low = %d deciDegC, high = %d deciDegC\n",
 			chip->bat_is_overheat, chip->bat_is_warm, chip->bat_is_cool, chip->bat_is_little_cool, chip->bat_is_cold, chip->bat_is_little_cold,
 			chip->adc_param.low_temp, chip->adc_param.high_temp);
@@ -5272,12 +5188,12 @@ qpnp_chg_configure_jeita(struct qpnp_chg_chip *chip,
 			goto mutex_unlock;
 
 		}
-
+		
 		if (chip->bat_is_cool)
 			chip->adc_param.high_temp = temp_degc;
 		else if (chip->bat_is_little_cool)
 			chip->adc_param.low_temp = temp_degc - HYSTERISIS_DECIDEGC;
-
+		
 		chip->cool_bat_decidegc = temp_degc;
 		break;
 	case POWER_SUPPLY_PROP_WARM_TEMP:
@@ -5297,12 +5213,12 @@ qpnp_chg_configure_jeita(struct qpnp_chg_chip *chip,
 			rc = -EINVAL;
 			goto mutex_unlock;
 		}
-
+		
 		if (chip->bat_is_warm)
 			chip->adc_param.low_temp = temp_degc - HYSTERISIS_DECIDEGC;
 		else if (!chip->bat_is_cool && !chip->bat_is_warm && !chip->bat_is_cold && !chip->bat_is_overheat && !chip->bat_is_little_cool && !chip->bat_is_little_cold)
 			chip->adc_param.high_temp = temp_degc;
-
+		
 		chip->warm_bat_decidegc = temp_degc;
 		break;
 
@@ -5337,7 +5253,7 @@ qpnp_chg_configure_jeita(struct qpnp_chg_chip *chip,
 			chip->adc_param.low_temp = temp_degc - HYSTERISIS_DECIDEGC;
 		else if (chip->bat_is_warm)
 			chip->adc_param.high_temp = temp_degc;
-
+		
 
 		chip->overheat_bat_decidegc = temp_degc;
 		break;
@@ -5359,15 +5275,15 @@ qpnp_chg_configure_jeita(struct qpnp_chg_chip *chip,
 			goto mutex_unlock;
 
 		}
-
+		
 		if (chip->bat_is_little_cool)
 			chip->adc_param.high_temp = temp_degc;
 		else if (!chip->bat_is_cool && !chip->bat_is_warm && !chip->bat_is_cold && !chip->bat_is_overheat && !chip->bat_is_little_cool && !chip->bat_is_little_cold)
 			chip->adc_param.low_temp = temp_degc - HYSTERISIS_DECIDEGC;
-
+		
 		chip->little_cool_bat_decidegc = temp_degc;
 		break;
-
+		
 	case POWER_SUPPLY_PROP_LITTLE_COLD_TEMP:
 		if (temp_degc >=
 			(chip->cool_bat_decidegc - HYSTERISIS_DECIDEGC)) {
@@ -5385,12 +5301,12 @@ qpnp_chg_configure_jeita(struct qpnp_chg_chip *chip,
 			goto mutex_unlock;
 
 		}
-
+		
 		if (chip->bat_is_little_cold)
 			chip->adc_param.high_temp = temp_degc + HYSTERISIS_DECIDEGC;
 		else if (chip->bat_is_cool)
 			chip->adc_param.low_temp = temp_degc;
-
+		
 		chip->little_cold_bat_decidegc = temp_degc;
 		break;
 
@@ -5624,6 +5540,7 @@ qpnp_chg_power_stage_set(struct qpnp_chg_chip *chip, bool reduce)
 }
 
 #ifndef CONFIG_VENDOR_EDIT
+
 static int
 qpnp_chg_get_vusbin_uv(struct qpnp_chg_chip *chip)
 {
@@ -5810,10 +5727,8 @@ qpnp_dc_power_set_property(struct power_supply *psy,
 		return -EINVAL;
 	}
 
-#ifndef CONFIG_VENDOR_EDIT
 	pr_debug("psy changed dc_psy\n");
 	power_supply_changed(&chip->dc_psy);
-#endif
 	return rc;
 }
 
@@ -5842,6 +5757,7 @@ qpnp_batt_power_set_property(struct power_supply *psy,
 		rc = qpnp_chg_configure_jeita(chip, psp, val->intval);
 		break;
 #endif
+		
 	case POWER_SUPPLY_PROP_CAPACITY:
 		chip->fake_battery_soc = val->intval;
 		power_supply_changed(&chip->batt_psy);
@@ -5858,6 +5774,7 @@ qpnp_batt_power_set_property(struct power_supply *psy,
 			qpnp_chg_force_run_on_batt(chip,
 					chip->charging_disabled);
 			qpnp_chg_charge_en(chip, !chip->charging_disabled);
+
 		}
 		break;
 	case POWER_SUPPLY_PROP_SYSTEM_TEMP_LEVEL:
@@ -6040,29 +5957,26 @@ qpnp_chg_request_irqs(struct qpnp_chg_chip *chip)
 		case SMBB_BAT_IF_SUBTYPE:
 		case SMBBP_BAT_IF_SUBTYPE:
 		case SMBCL_BAT_IF_SUBTYPE:
-#ifdef CONFIG_VENDOR_EDIT
-			if (get_boot_mode() != MSM_BOOT_MODE__FACTORY) {
-				chip->batt_pres.irq = spmi_get_irq_byname(spmi,
-							spmi_resource, "batt-pres");
-				if (chip->batt_pres.irq < 0) {
-					pr_err("Unable to get batt-pres irq\n");
-					return rc;
-				}
-				rc = devm_request_irq(chip->dev, chip->batt_pres.irq,
-					qpnp_chg_bat_if_batt_pres_irq_handler,
-					IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING
-					| IRQF_SHARED | IRQF_ONESHOT,
-					"batt-pres", chip);
-				if (rc < 0) {
-					pr_err("Can't request %d batt-pres irq: %d\n",
-							chip->batt_pres.irq, rc);
-					return rc;
-				}
-
-				qpnp_chg_irq_wake_enable(&chip->batt_pres);
+		if (get_boot_mode() != MSM_BOOT_MODE__FACTORY){
+			chip->batt_pres.irq = spmi_get_irq_byname(spmi,
+						spmi_resource, "batt-pres");
+			if (chip->batt_pres.irq < 0) {
+				pr_err("Unable to get batt-pres irq\n");
+				return rc;
 			}
-#endif
+			rc = devm_request_irq(chip->dev, chip->batt_pres.irq,
+				qpnp_chg_bat_if_batt_pres_irq_handler,
+				IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING
+				| IRQF_SHARED | IRQF_ONESHOT,
+				"batt-pres", chip);
+			if (rc < 0) {
+				pr_err("Can't request %d batt-pres irq: %d\n",
+						chip->batt_pres.irq, rc);
+				return rc;
+			}
 
+			qpnp_chg_irq_wake_enable(&chip->batt_pres);
+		}
 			chip->batt_temp_ok.irq = spmi_get_irq_byname(spmi,
 						spmi_resource, "bat-temp-ok");
 			if (chip->batt_temp_ok.irq < 0) {
@@ -6628,6 +6542,7 @@ qpnp_charger_read_dt_props(struct qpnp_chg_chip *chip)
 	OF_PROP_READ(chip, overheat_bat_decidegc, "overheat-bat-decidegc", rc, 1);
 	OF_PROP_READ(chip, little_cool_bat_decidegc, "little-cool-bat-decidegc", rc, 1);
 	OF_PROP_READ(chip, little_cold_bat_decidegc, "little-cold-bat-decidegc", rc, 1);
+
 #endif
 	OF_PROP_READ(chip, tchg_mins, "tchg-mins", rc, 1);
 	OF_PROP_READ(chip, hot_batt_p, "batt-hot-percentage", rc, 1);
@@ -6677,6 +6592,7 @@ qpnp_charger_read_dt_props(struct qpnp_chg_chip *chip)
 		OF_PROP_READ(chip, little_cool_bat_mv, "little-cool-bat-mv", rc, 1);
 		OF_PROP_READ(chip, little_cold_bat_mv, "little-cold-bat-mv", rc, 1);
 #endif
+
 		if (rc)
 			return rc;
 	}
@@ -7092,13 +7008,11 @@ qpnp_charger_probe(struct spmi_device *spmi)
 						qpnp_chg_adc_notification;
 		chip->adc_param.channel = LR_MUX1_BATT_THERM;
 
-#ifdef CONFIG_VENDOR_EDIT
+#ifdef CONFIG_VENDOR_EDIT		
 		//qpnp_chg_adc_notification_init(chip);
 #endif
 
 		if (get_prop_batt_present(chip)) {
-			pr_info("setting adc_tm high=%d, low=%d\n",
-				chip->adc_param.high_temp, chip->adc_param.low_temp);
 			rc = qpnp_adc_tm_channel_measure(chip->adc_tm_dev,
 							&chip->adc_param);
 			if (rc) {
@@ -7146,7 +7060,7 @@ qpnp_charger_probe(struct spmi_device *spmi)
 	queue_delayed_work(system_power_efficient_wq,
 		&chip->aicl_check_work,
 		msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
-	pr_info("success chg_dis = %d, bpd = %d, usb = %d, dc = %d b_health = %d batt_present = %d\n",
+	pr_info("success chg_dis = %d, bpd = %d, usb = %d, dc = %d, batt_present = %d, batt_health = %d\n",
 			chip->charging_disabled,
 			chip->bpd_detection,
 			qpnp_chg_is_usb_chg_plugged_in(chip),
@@ -7228,6 +7142,7 @@ static int qpnp_chg_resume(struct device *dev)
 	struct qpnp_chg_chip *chip = dev_get_drvdata(dev);
 	int rc = 0;
 
+
 	if (chip->bat_if_base) {
 		rc = qpnp_chg_masked_write(chip,
 			chip->bat_if_base + BAT_IF_VREF_BAT_THM_CTRL,
@@ -7256,6 +7171,7 @@ static int qpnp_chg_suspend(struct device *dev)
 			chip->bat_if_base + BAT_IF_VREF_BAT_THM_CTRL,
 			VREF_BATT_THERM_FORCE_ON,
 			VREF_BAT_THM_ENABLED_FSM, 1);
+
 #endif
 		if (rc)
 			pr_debug("failed to set FSM VREF_BAT_THM rc=%d\n", rc);
