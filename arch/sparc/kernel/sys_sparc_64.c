@@ -487,7 +487,7 @@ SYSCALL_DEFINE6(sparc_ipc, unsigned int, call, int, first, unsigned long, second
 		switch (call) {
 		case SHMAT: {
 			ulong raddr;
-			err = do_shmat(first, ptr, (int)second, &raddr, SHMLBA);
+			err = do_shmat(first, ptr, (int)second, &raddr);
 			if (!err) {
 				if (put_user(raddr,
 					     (ulong __user *) third))
